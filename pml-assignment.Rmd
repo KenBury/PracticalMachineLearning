@@ -1,0 +1,100 @@
+---
+title: "PML Project"
+author: "Ken Bury"
+date: "Saturday, November 22, 2014"
+output: html_document
+---
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+# Data
+
+The training data for this project are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Reviewing the the following paper helped me understand the nature of the data and thier attempts to model the data. They used a random forest model attempt to predict the difference between a properly done exercise verses ones that are done purposely wrong.
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3Jv3oB6Mb
+```{r}
+pml.training <- read.csv("~/Coursera/Practical Machine Learning/pml-training.csv", header=TRUE,na.strings = c("NA", ""))
+pml.testing <- read.csv("~/Coursera/Practical Machine Learning/pml-testing.csv", header=TRUE,na.strings = c("NA", ""))
+```
+## Review the data
+```{r, eval=FALSE}
+summary(pml.training)
+```
+Summary output removed for brevity.
+
+There are a number of variables that do not have any values so those columns are removed.
+```{r}
+pml.training <- pml.training[ , apply(pml.training, 2, function(x) sum(is.na(x)) < 5 )]
+```
+There are variables that are used to identify the samples, the person doing the execises, and some timestamp information. These variables are not related to the measurements of the sensors during the exercises so they are removed.
+```{r}
+pml.training <- pml.training[ -c(1:7)]
+```
+Produce the training and test sets. I choose to use a 75% training and 25% testing split.
+```{r}
+library(doParallel)
+registerDoParallel()
+getDoParWorkers()
+library(caret)
+inTrain = createDataPartition(pml.training$classe, p = .75)[[1]]
+training = pml.training[ inTrain,]
+testing = pml.training[-inTrain,]
+```
+A plot of a few variables to show how this data is grouped.
+```{r}
+featurePlot(x=training[,1:5],
+                y = training$classe,
+                plot="pairs",
+                auto.key = list(columns = 5))
+```
+
+```{r}
+featurePlot(x=training[,1:20],
+                y = training$classe,
+                plot="strip",
+                auto.key = list(columns = 5))
+```            
+
+The data is grouped in clusters so this would be best modelled by a non linear method like random forests. 
+
+## Model training
+
+The model is trained with the training set. Typically a random forest uses a bootstrap sampling method however this takes a long time to run and did not appear to improve the model as compared to the faster k-fold cross validation method that I use in the following to develop the model.
+
+```{r}
+modFit <- train(classe~ .,data=training,method="rf",prox=TRUE,trControl = trainControl(method = "cv", number = 5), importance = TRUE)
+modFit
+modFit$finalModel
+```
+Note the estimate error is 0.65%
+
+## Model verification 
+
+The model is verified with the test set.
+```{r}
+pred <- predict(modFit,testing); testing$predRight <- pred==testing$classe
+```
+Confusion matrix
+```{r}
+confusionMatrix(pred, testing$classe)
+```
+## Review out of sample error and estimate error.
+
+The out of sample accuracy is 0.9933. So the out of sample error is 1 - 0.9933 = 0.67%  Comparing that to the estimate error from the model which is 0.65% The error rates are expected to be similar. 
+
+## Final results
+
+The prediction using the formal test set:
+```{r}
+final_pred <- predict(modFit,pml.testing)
+final_pred
+```
